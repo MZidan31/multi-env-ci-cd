@@ -1,0 +1,46 @@
+pipeline {
+  agent any
+  environment {
+    IMAGE = "masjidan/demo-app"
+  }
+  stages {
+    stage('Checkout') {
+      steps {
+        git 'https://github.com/MZidan31/multi-env-ci-cd.git'
+      }
+    }
+    stage('Build & Push Image') {
+      steps {
+        sh 'docker build -t $IMAGE:$BUILD_NUMBER .'
+        withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
+          sh 'echo $PASS | docker login -u $USER --password-stdin'
+          sh 'docker push $IMAGE:$BUILD_NUMBER'
+        }
+      }
+    }
+    stage('Deploy to Dev') {
+      when {
+        branch 'main'
+      }
+      steps {
+        sh 'kubectl apply -f k8s/dev/ --namespace=dev'
+      }
+    }
+    stage('Approve Prod') {
+      when {
+        buildingTag()
+      }
+      steps {
+        input 'Deploy to production?'
+      }
+    }
+    stage('Deploy to Prod') {
+      when {
+        buildingTag()
+      }
+      steps {
+        sh 'kubectl apply -f k8s/prod/ --namespace=prod'
+      }
+    }
+  }
+}
